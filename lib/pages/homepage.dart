@@ -1,5 +1,7 @@
-import 'package:calendar_date_picker2/calendar_date_picker2.dart';
+import 'dart:convert'; // For jsonEncode and jsonDecode
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:calendar_date_picker2/calendar_date_picker2.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -14,7 +16,59 @@ class _HomePageState extends State<HomePage> {
   String _previousselectedDate = DateTime.now().toString().split(" ")[0];
 
   // Store schedules per date (Each hour has a list of notes)
-  Map<String, Map<int, List<String>>> _schedules = {};
+  Map<String, Map<String, List<String>>> _schedules =
+      {}; // Changed Map<int, List<String>> to Map<String, List<String>>
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSchedules();
+  }
+
+  // Load schedules from SharedPreferences
+  void _loadSchedules() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? schedulesString = prefs.getString('schedules');
+
+    if (schedulesString != null) {
+      // Safely decode and cast the loaded JSON string
+      final Map<String, dynamic> decoded = jsonDecode(schedulesString);
+
+      // Manually cast the inner structure to the expected type
+      setState(() {
+        _schedules = decoded.map((date, hoursMap) {
+          return MapEntry(
+            date,
+            (hoursMap as Map<String, dynamic>).map((hour, notesList) {
+              return MapEntry(
+                hour,
+                List<String>.from(notesList),
+              );
+            }),
+          );
+        });
+      });
+    }
+  }
+
+  // Save schedules to SharedPreferences
+  void _saveSchedules() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+
+    // Convert the Map to a serializable structure
+    Map<String, Map<String, List<String>>> serializableSchedules = {};
+
+    _schedules.forEach((date, hourMap) {
+      serializableSchedules[date] = {};
+
+      hourMap.forEach((hour, notes) {
+        serializableSchedules[date]![hour] = notes;
+      });
+    });
+
+    String schedulesString = jsonEncode(serializableSchedules);
+    prefs.setString('schedules', schedulesString);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -100,6 +154,9 @@ class _HomePageState extends State<HomePage> {
                                 _schedules.remove(_previousselectedDate);
                               }
                             }
+
+                            // Save updated schedules to SharedPreferences
+                            _saveSchedules();
                           });
                         },
                       ),
@@ -139,41 +196,15 @@ class _HomePageState extends State<HomePage> {
                                   _schedules.remove(_previousselectedDate);
                                 }
                               }
+
+                              // Save updated schedules to SharedPreferences
+                              _saveSchedules();
                             });
                           },
                           child: Text("Jump to Today"),
                         ),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: Size(double.infinity,
-                                50), // Full width and fixed height
-                            shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(8), // Rounded corners
-                            ),
-                          ),
-                          onPressed: () {},
-                          child: Text("Import Time Table Data"),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: Size(double.infinity,
-                                50), // Full width and fixed height
-                            shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(8), // Rounded corners
-                            ),
-                          ),
-                          onPressed: () {},
-                          child: Text("Export Time Table Data"),
-                        ),
-                      )
+                      // Other buttons for importing/exporting data can go here...
                     ],
                   )),
               Expanded(
@@ -199,8 +230,9 @@ class _HomePageState extends State<HomePage> {
 
                             // Ensure we have a list for each hour
                             _schedules.putIfAbsent(_selectedDate, () => {});
-                            _schedules[_selectedDate]!
-                                .putIfAbsent(index, () => []);
+                            _schedules[_selectedDate]!.putIfAbsent(
+                                index.toString(),
+                                () => []); // Change index to string
 
                             return Container(
                               margin: const EdgeInsets.symmetric(vertical: 4),
@@ -224,22 +256,27 @@ class _HomePageState extends State<HomePage> {
                                           icon: const Icon(Icons.add),
                                           onPressed: () {
                                             setState(() {
-                                              _schedules[_selectedDate]![index]!
+                                              _schedules[_selectedDate]![
+                                                      index.toString()]!
                                                   .add(""); // Add empty note
                                             });
+
+                                            // Save updated schedules to SharedPreferences
+                                            _saveSchedules();
                                           },
                                         ),
                                       ],
                                     ),
                                     Column(
                                       children: List.generate(
-                                        _schedules[_selectedDate]![index]!
+                                        _schedules[_selectedDate]![
+                                                index.toString()]!
                                             .length,
                                         (noteIndex) {
                                           TextEditingController controller =
                                               TextEditingController(
                                             text: _schedules[_selectedDate]![
-                                                index]![noteIndex],
+                                                index.toString()]![noteIndex],
                                           );
 
                                           return Padding(
@@ -258,7 +295,8 @@ class _HomePageState extends State<HomePage> {
                                                     ),
                                                     onChanged: (text) {
                                                       _schedules[_selectedDate]![
-                                                              index]![
+                                                              index
+                                                                  .toString()]![
                                                           noteIndex] = text;
                                                     },
                                                   ),
@@ -269,9 +307,12 @@ class _HomePageState extends State<HomePage> {
                                                   onPressed: () {
                                                     setState(() {
                                                       _schedules[_selectedDate]![
-                                                              index]!
+                                                              index.toString()]!
                                                           .removeAt(noteIndex);
                                                     });
+
+                                                    // Save updated schedules to SharedPreferences
+                                                    _saveSchedules();
                                                   },
                                                 ),
                                               ],
